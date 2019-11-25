@@ -208,16 +208,180 @@ def clean_cmu(text):
     return text
 
 
+CU_re = {
+    "TITLE": re.compile("APS [0-9]+ ?- ?([A-Z0-9][\S ]+[A-Za-z0-9\)]) \|"),
+    # TODO: make this less complicated
+    "POLICY": re.compile("(II\.\s+)?(POLICY STATEMENTS?|Policy Statements?)\s+(.+)[\n]+(III\.|Related Policies, Procedures, Forms, Guidelines, and Other Resources|History|Definitions)", flags=re.DOTALL),
+    "INLINE_DEF": re.compile("([a-z])([A-Z][\S ]*?[\w])([A-Z][\S ]*?)([.]|Definitions\.?)( [a-z]| ?[,;:.\)\(\-\n])"),
+    "UNIVERSITY": re.compile('C\.*U\.*|Colorado University|University of Colorado|[Tt]he university'),
+    "BULLET": re.compile('[\s]+(\(?[IVXivx0-9]+\)|\(?[a-gA-G]\)|[0-9IVXivx]+\.|[a-gA-G]\.)[\s]+'),
+    "FIX_SENT": re.compile("([a-zA-Z0-9]|\))\s*\n")
+}
+
+inline_defs = set()
+
+
+def remove_inline_defs(text):
+    matches = CU_re["INLINE_DEF"].findall(text)
+    for m in matches:
+        # print(m)
+        if "tPathways" not in m[0] + m[1]:
+            term = m[1]
+            defn = m[2] + m[3]
+            inline_defs.add(term + defn)
+    for defn in inline_defs:
+        text = text.replace(defn, "")
+    return text
+
+
 def clean_cu(text):
-    raise Exception("unimplemented")
+    text = text.replace("\u200b", "")
+    text = text.replace("\u00a0", " ")
+    text = text.replace("\u2022", "")
+    text = text.replace("\u2019", "'")
+    text = text.replace("\u2013", "-")
+    text = text.replace("\u201c", "\"")
+    text = text.replace("\u201d", '"')
+
+    match = CU_re["TITLE"].search(text)
+    title = None
+    if match != None:
+        title = match.group(1)
+
+    match = CU_re["POLICY"].search(text)
+    if match == None:
+        return ""
+
+    text = match.group(3).strip()
+
+    text = "SECTION-HEADER Policy Statement. " + text
+
+    if title != None:
+        text = "SECTION-HEADER " + title + ". " + text
+
+    text = remove_inline_defs(text)
+
+    # get rid of bullets
+    text = CU_re["BULLET"].sub(" ", text)
+
+    # normalize university names
+    text = CU_re["UNIVERSITY"].sub('The University', text)
+
+    # make sure there is a period before each line break
+    text = CU_re["FIX_SENT"].sub("\g<1>.\n", text)
+
+    # Remove annoying punctuation, that's not relevant
+    text = BAD_PUNCT_RE.sub('', text)
+
+    # removing newlines, tabs, and extra spaces.
+    text = WHITESPACE_RE.sub(' ', text)
+
+    # If we ended up with "empty" sentences - get rid of them.
+    text = EMPTY_SENT_RE.sub('.', text)
+
+    # Attempt to create sentences from bullets
+    text = replace_semicolon(text)
+
+    # Get rid of anything thats not a word from the start of the text
+    text = FIX_START_RE.sub('', text)
+
+    # Sometimes periods get formatted weird, make sure there is a space between periods and start of sent
+    text = FIX_PERIOD.sub(". \g<1>", text)
+
+    # Fix quotes
+    text = text.replace('``', '"')
+    text = text.replace('\'\'', '"')
+
+    # Add special punct back in
+    text = text.replace('SECTION-HEADER', '<SECTION-HEADER>')
+
+    return text
+
+
+DAYTON_re = {
+    "START": re.compile("Policy[A-Z][A-Za-z]"),
+    "END": re.compile("University of Dayton300 College ParkDayton, OH"),
+    "TITLE": re.compile("([\S ]+) : University"),
+    "BULLET": re.compile('[\s]+(\(?[IVXivx0-9]+\)|\(?[a-gA-G]\)|[0-9IVXivx]+\.|[a-gA-G]\.)[\s]+'),
+    "FIX_SENT": re.compile("([a-zA-Z0-9]|\))\s*\n")
+}
 
 
 def clean_dayton(text):
-    raise Exception("unimplemented")
+    text = text.replace("\u200b", "")
+    text = text.replace("\u00a0", " ")
+    text = text.replace("\u2022", "")
+    text = text.replace("\u2019", "'")
+    text = text.replace("\u2013", "-")
+    text = text.replace("\u201c", "\"")
+    text = text.replace("\u201d", '"')
+
+    title = None
+    match = DAYTON_re["TITLE"].search(text)
+    if match != None:
+        title = match.group(1)
+
+    match = DAYTON_re["START"].findall(text)
+    if match == []:
+        return ""
+    start_idx = text.find(match[-1])
+
+    end_idx = len(text)
+    match = DAYTON_re["END"].search(text)
+    if match != None:
+        end_idx = match.start()
+
+    text = "SECTION-HEADER " + text[start_idx:end_idx]
+
+    if title != None:
+        text = "SECTION-HEADER " + title + ". " + text
+
+    # make sure there is a period before each line break
+    text = DAYTON_re["FIX_SENT"].sub("\g<1>.\n", text)
+
+    # Remove annoying punctuation, that's not relevant
+    text = BAD_PUNCT_RE.sub('', text)
+
+    # removing newlines, tabs, and extra spaces.
+    text = WHITESPACE_RE.sub(' ', text)
+
+    # If we ended up with "empty" sentences - get rid of them.
+    text = EMPTY_SENT_RE.sub('.', text)
+
+    # Attempt to create sentences from bullets
+    text = replace_semicolon(text)
+
+    # Get rid of anything thats not a word from the start of the text
+    text = FIX_START_RE.sub('', text)
+
+    # Sometimes periods get formatted weird, make sure there is a space between periods and start of sent
+    text = FIX_PERIOD.sub(". \g<1>", text)
+
+    # Fix quotes
+    text = text.replace('``', '"')
+    text = text.replace('\'\'', '"')
+
+    # Add special punct back in
+    text = text.replace('SECTION-HEADER', '<SECTION-HEADER>')
+
+    return text
+
+
+PSU_re = {
+    "TITLE": re.compile("([\S ]+) \|"),
+    "START": re.compile("\nPOLICY:\n")
+}
 
 
 def clean_psu(text):
-    raise Exception("unimplemented")
+    title = None
+    match = PSU_re["TITLE"].search(text)
+    if match != None:
+        title = match.group(1)
+
+    match = PSU_re["START"].search(text)
+    if match == None:
+        print(text.strip()[:50])
 
 
 def clean_uoregon(text):
@@ -250,7 +414,7 @@ if __name__ == '__main__':
     # os.mkdir(save_path)
 
     for file in os.listdir(path):
-        if 'cmu.json' not in file:
+        if 'psu.json' not in file:
             continue
 
         file_path = os.path.join(path,  file)
@@ -259,7 +423,7 @@ if __name__ == '__main__':
 
         data = pd.read_json(file_path)
 
-        data['clean_policy'] = data.policy.map(clean_cmu)
+        data['clean_policy'] = data.policy.map(clean_psu)
 
         save_path = os.path.join(prefix, 'clean_uni_sep', file)
 
